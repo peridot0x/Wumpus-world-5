@@ -35,7 +35,29 @@ def astar(start, goal_test, h, allowed, stats=None):
       · parent[state] = (이전 상태, 동작) 으로 경로를 기록해 두었다가 역추적
       · 같은 상태를 더 작은 g로 다시 만나면 갱신 (모든 동작 비용 = 1)
     """
-    raise NotImplementedError("TODO 4: astar")
+    tie = count()
+    g0 = {start: 0}
+    parent = {start: None}
+    open_heap = [(h(start), next(tie), 0, start)]
+    while open_heap:
+        f, _, g, state = heapq.heappop(open_heap)
+        if g > g0.get(state, float("inf")):
+            continue
+        if stats is not None:
+            stats["expanded"] = stats.get("expanded", 0) + 1
+        if goal_test(state):
+            plan = []
+            while parent[state] is not None:
+                state, act = parent[state][0], parent[state][1]
+                plan.append(act)
+            return plan[::-1]
+        for act, nxt in successors(state, allowed):
+            ng = g + 1                              # 모든 동작 비용 = 1
+            if ng < g0.get(nxt, float("inf")):
+                g0[nxt] = ng
+                parent[nxt] = (state, act)
+                heapq.heappush(open_heap, (ng + h(nxt), next(tie), ng, nxt))
+    return None
 
 
 def manhattan_to(goals):
