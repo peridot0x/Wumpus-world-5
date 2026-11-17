@@ -172,6 +172,39 @@ def tt_entails(kb_clauses, alpha, stats=None):
                TT-CHECK-ALL(KB, α, rest, model ∪ {P=false})
     힌트: KB가 참 ⇔ 모든 절에 대해 _clause_true(c, model)
     """
+  def tt_entails(kb_clauses, alpha, stats=None):
+    kb_symbols = set()
+
+    for clause in kb_clauses:
+        for lit in clause:
+            kb_symbols.add(var(lit))
+
+    symbols = sorted(kb_symbols | alpha.symbols())
+
+    if stats is not None:
+        stats["symbols_max"] = max(
+            stats.get("symbols_max", 0),
+            len(symbols)
+        )
+
+    def check_all(index, model):
+        if index == len(symbols):
+            if stats is not None:
+                stats["models"] = stats.get("models", 0) + 1
+
+            if all(_clause_true(c, model) for c in kb_clauses):
+                return alpha.pl_true(model)
+
+            return True
+
+        p = symbols[index]
+
+        return (
+            check_all(index + 1, {**model, p: True})
+            and check_all(index + 1, {**model, p: False})
+        )
+
+    return check_all(0, {})
     raise NotImplementedError("TODO 1: tt_entails")
 
 
