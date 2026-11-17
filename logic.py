@@ -172,8 +172,7 @@ def tt_entails(kb_clauses, alpha, stats=None):
                TT-CHECK-ALL(KB, α, rest, model ∪ {P=false})
     힌트: KB가 참 ⇔ 모든 절에 대해 _clause_true(c, model)
     """
-  def tt_entails(kb_clauses, alpha, stats=None):
-    kb_symbols = set()
+kb_symbols = set()
 
     for clause in kb_clauses:
         for lit in clause:
@@ -205,7 +204,6 @@ def tt_entails(kb_clauses, alpha, stats=None):
         )
 
     return check_all(0, {})
-    raise NotImplementedError("TODO 1: tt_entails")
 
 
 # =============================================================== 2) DPLL
