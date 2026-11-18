@@ -230,7 +230,21 @@ def clause_status(c, model):
     예) c = {'P12', 'P21'},  model = {'P12': False}  →  ("undecided", ['P21'])
         c = {'P12', 'P21'},  model = {'P12': False, 'P21': False}  →  ("false", [])
     힌트: 각 리터럴에 _lit_value(l, model)을 적용해 True / None 을 모은다. (약 8줄)"""
-    raise NotImplementedError("TODO 2-1: clause_status")
+    undecided = []
+
+    for lit in c:
+        value = _lit_value(lit, model)
+
+        if value is True:
+            return "true", []
+
+        if value is None:
+            undecided.append(lit)
+
+    if undecided:
+        return "undecided", undecided
+
+    return "false", []
 
 
 def find_pure_symbol(symbols, clauses, model):
