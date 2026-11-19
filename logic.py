@@ -277,7 +277,19 @@ def dpll(clauses, symbols, model, stats=None, use_pure=True, use_unit=True):
     # ① [TODO 2-2] 조기 종료
     #    clause_status로 모든 절의 상태를 구해서
     #    "false"인 절이 하나라도 있으면 return False,  모든 절이 "true"이면 return True
-    raise NotImplementedError("TODO 2-2: dpll ① 조기 종료")
+    all_true = True
+
+    for c in clauses:
+        status, _ = clause_status(c, model)
+
+        if status == "false":
+            return False
+
+        if status != "true":
+            all_true = False
+
+    if all_true:
+        return True
 
     # ② 순수 기호 휴리스틱 (제공 — find_pure_symbol을 구현하면 자동으로 사용됨)
     if use_pure:
@@ -294,6 +306,17 @@ def dpll(clauses, symbols, model, stats=None, use_pure=True, use_unit=True):
     #    아직 model에 없는 첫 기호 p를 골라
     #    p=True 로 재귀 호출한 결과 or p=False 로 재귀 호출한 결과 를 반환
     #    (재귀 호출에도 stats, use_pure, use_unit 을 그대로 넘길 것)
+    p = next((s for s in symbols if s not in model), None)
+
+    if p is None:
+        return False
+
+    return (
+        dpll(clauses, symbols, {**model, p: True},
+             stats, use_pure, use_unit)
+        or dpll(clauses, symbols, {**model, p: False},
+                stats, use_pure, use_unit)
+    )
 
 
 def dpll_satisfiable(clauses, stats=None, use_pure=True, use_unit=True):
