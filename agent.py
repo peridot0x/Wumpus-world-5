@@ -76,7 +76,27 @@ class HybridWumpusAgent:
         #   (4) 냄새:  S_c ⇔ W(c) ∨ W(이웃1) ∨ …   (웜퍼스 칸 자신에서도 냄새가 남!)
         #   (5) 마지막에 self.dirty = True
         nb = self.neighbors(c)
-        raise NotImplementedError("TODO 5: tell_percept")
+
+        self.kb.tell(~P(c))
+
+        if not self.wumpus_dead:
+            self.kb.tell(~W(c))
+
+        if p.breeze:
+            self.kb.tell(Or(*[P(n) for n in nb]))
+        else:
+            for n in nb:
+                self.kb.tell(~P(n))
+
+        if not self.wumpus_dead:
+            smell_cells = [c] + nb
+            if p.stench:
+                self.kb.tell(Or(*[W(n) for n in smell_cells]))
+            else:
+                for n in smell_cells:
+                    self.kb.tell(~W(n))
+
+        self.dirty = True
 
     # ---------------------------------------------------------------- ASK
     def update_knowledge(self):
