@@ -332,7 +332,15 @@ def dpll_entails(kb_clauses, alpha, stats=None, use_pure=True, use_unit=True):
     """[TODO 3] KB ⊨ α  ⇔  KB ∧ ¬α 가 충족 불가능 (귀류법)
     힌트: to_cnf(Not(alpha)) 로 ¬α의 절을 얻어 KB 절과 합친 뒤
           dpll_satisfiable(..., stats, use_pure, use_unit) 의 결과를 뒤집는다. (1줄)"""
-    raise NotImplementedError("TODO 3: dpll_entails")
+    negated_clauses = to_cnf(~alpha)
+
+    clauses = kb_clauses | negated_clauses
+
+    satisfiable = dpll_satisfiable(
+        clauses, stats, use_pure, use_unit
+    )
+
+    return not satisfiable
 
 
 # ====================================================================== KB
