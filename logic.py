@@ -172,7 +172,7 @@ def tt_entails(kb_clauses, alpha, stats=None):
                TT-CHECK-ALL(KB, α, rest, model ∪ {P=false})
     힌트: KB가 참 ⇔ 모든 절에 대해 _clause_true(c, model)
     """
-kb_symbols = set()
+    kb_symbols = set()
 
     for clause in kb_clauses:
         for lit in clause:
