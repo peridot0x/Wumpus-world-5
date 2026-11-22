@@ -213,3 +213,280 @@ KB에 "웜퍼스가 최소 한 마리 있다"는 절이 없어서, 3000개 중 1
 python test_agent.py     # TODO 5~7 에이전트 (그림 7.2), (무작위 200개, 건전성)  → PASS
 ```
 건전성 테스트는 KB의 모든 절이 실제 세계에서 참인지, 안전 정책에서 사망하지 않는지를 검사한다.
+
+---
+
+## 알고리즘 설명: 진리표로 함의 판정 (`logic.tt_entails`, TODO 1)
+
+### 역할
+지식 베이스(KB)가 참인 모든 모델에서 질의 α도 참인지 검사한다. 모델은 각 기호에 참·거짓을 배정한 표의 한 행이다.
+
+### 구현 코드
+```python
+p = symbols[index]
+
+return (
+    check_all(index + 1, {**model, p: True})
+    and check_all(index + 1, {**model, p: False})
+)
+```
+
+### 핵심 아이디어: 반례 한 개면 충분하다
+각 기호마다 두 가지 값을 시도하고, 완전한 배정에서 KB와 질의를 차례로 평가한다.
+
+### 줄별 설명
+| 코드 | 기능 |
+| --- | --- |
+| `var(lit)`, `alpha.symbols()` | KB의 리터럴에서 부호를 떼고 질의의 기호까지 합친다. `check_all(0, {})`에서 빈 모델로 시작한다. |
+| `index == len(symbols)` | 완전한 모델에서 모든 절이 참이면 `alpha.pl_true(model)`을 반환한다. KB가 거짓인 행은 반례가 될 수 없어 `True`로 넘긴다. |
+| `check_all(...) and check_all(...)` | 기호를 참과 거짓으로 각각 배정한다. 한쪽에서 반례가 나오면 남은 쪽을 검사할 필요가 없다. |
+
+### 동작 예
+KB가 `A ∨ B`이고 질의가 `A`일 때, `A=False, B=True`인 행에서 KB는 참이고 질의는 거짓이다. 따라서 결과는 `False`다.
+
+### 설계상 주의점
+`stats["models"]`는 실제 도달한 완전 모델 수이고, `symbols_max`는 한 질의에서 다룬 기호 수의 최댓값이다.
+
+### 흔한 실수
+| 실수 | 결과 |
+| --- | --- |
+| KB가 거짓인 행에서 `False` 반환 | 질의와 무관한 행을 반례로 잘못 센다. |
+
+### 검증 결과
+**테스트의 기대 결과** 교재 R1~R5에서 `¬P12`와 `P22 ∨ P31`은 도출되고, `P22`와 `¬P22`는 모두 미확정이다.
+
+### 한계
+서로 다른 기호가 n개면 최악의 경우 2ⁿ개의 완전 모델을 검사한다.
+
+### 테스트
+
+```bash
+python -c "from test_agent import t1_tt; t1_tt()"
+```
+
+---
+
+## 알고리즘 설명: 부분 모델에서 절의 상태 판정 (`logic.clause_status`, TODO 2-1)
+
+### 역할
+참·거짓이 일부만 정해진 상태에서 OR로 연결된 절 하나를 평가한다. TODO 2-2가 이 결과로 탐색을 계속할지 결정한다.
+
+### 구현 코드
+```python
+def clause_status(c, model):
+    undecided = []
+
+    for lit in c:
+        value = _lit_value(lit, model)
+
+        if value is True:
+            return "true", []
+
+        if value is None:
+            undecided.append(lit)
+
+    if undecided:
+        return "undecided", undecided
+
+    return "false", []
+```
+
+### 핵심 아이디어: 거짓과 미할당을 구분한다
+절 하나를 참으로 만드는 리터럴은 하나면 충분하다. 거짓으로 확정하려면 모든 리터럴이 거짓이어야 한다.
+
+### 줄별 설명
+| 코드 | 기능 |
+| --- | --- |
+| `value = _lit_value(lit, model)` | 부정 기호까지 반영해 `True`, `False`, `None` 중 하나를 얻는다. |
+| `return "true", []` | 참인 리터럴을 하나라도 찾으면 절 전체가 참이다. |
+| `undecided.append(lit)` | 미할당 리터럴의 부호를 보존한다. 끝까지 참이 없으면 목록이 있을 때 `"undecided"`, 비어 있으면 `"false"`를 반환한다. |
+
+### 동작 예
+절 `A ∨ ¬B`에서 `A=False`만 주어지면 결과는 `("undecided", ["~B"])`다. 여기에 `B=True`를 넣으면 두 리터럴이 모두 거짓이므로 `("false", [])`가 된다.
+
+### 설계상 주의점
+반환하는 상태는 소문자 문자열이다. 빈 절 역시 참이 될 리터럴이 없어 `("false", [])`다.
+
+### 흔한 실수
+| 실수 | 결과 |
+| --- | --- |
+| `undecided.append(var(lit))` 사용 | `~B`의 부호를 잃어 이후에 필요한 배정이 뒤집힐 수 있다. |
+
+### 검증 결과
+**테스트의 기대 결과** 부분 배정에서 세 상태가 구분되고, 미할당 목록에 음의 리터럴이 원래 부호로 남는지 확인한다.
+
+### 한계
+이 함수는 절 하나만 평가한다. 여러 절이 동시에 만족 가능한지는 TODO 2-2가 판단한다.
+
+### 테스트
+
+```bash
+python -c "from test_agent import t21_clause_status; t21_clause_status()"
+```
+
+---
+
+## 알고리즘 설명: DPLL의 조기 종료와 분기 (`logic.dpll`, TODO 2-2)
+
+### 역할
+모든 절을 동시에 참으로 만드는 기호 배정이 하나라도 있는지 탐색한다.
+
+### 구현 코드
+```python
+p = next((s for s in symbols if s not in model), None)
+
+if p is None:
+    return False
+
+return (
+    dpll(clauses, symbols, {**model, p: True},
+         stats, use_pure, use_unit)
+    or dpll(clauses, symbols, {**model, p: False},
+            stats, use_pure, use_unit)
+)
+```
+
+### 핵심 아이디어: 부분 모델에서 결론이 나면 탐색을 끝낸다
+한 절의 거짓은 현재 분기의 실패를 뜻하고, 모든 절의 참은 만족 가능한 모델을 찾았다는 뜻이다.
+
+### 줄별 설명
+| 코드 | 기능 |
+| --- | --- |
+| `status, _ = clause_status(c, model)` | 거짓인 절이 하나면 현재 분기는 `False`다. 모든 절이 이미 참이면 남은 기호를 배정할 필요 없이 `True`다. |
+| `use_pure`, `use_unit` | 결론이 남으면 활성화된 순수 기호·단위 절 함수 순서로 배정할 값을 찾는다. |
+| `next(...)`, `dpll(...) or dpll(...)` | 아직 배정하지 않은 첫 기호를 골라 참과 거짓을 시도한다. 둘 중 한쪽만 성공해도 전체가 만족 가능하다. |
+
+### 동작 예
+`(A ∨ B) ∧ ¬A`에서 최적화를 끄고 A부터 고르면, `A=True`인 분기는 `¬A`에서 실패한다. `A=False, B=True`인 분기는 두 절이 모두 참이어서 성공한다.
+
+### 설계상 주의점
+`{**model, p: 값}`은 분기마다 새 모델을 만든다. 재귀 호출에는 같은 통계 객체와 최적화 옵션을 넘긴다.
+
+### 흔한 실수
+| 실수 | 결과 |
+| --- | --- |
+| 두 재귀 결과를 `and`로 연결 | 해가 한쪽에만 있는 식도 실패로 판정한다. |
+
+### 검증 결과
+**테스트의 기대 결과** `(P11 ∨ P12) ∧ ¬P11`은 만족 가능하고, 여기에 `¬P12`를 추가하면 만족 불가능하다.
+
+### 한계
+조기 종료나 휴리스틱으로 줄일 수 없는 경우에는 탐색할 분기 수가 지수적으로 늘어난다.
+
+### 테스트
+
+```bash
+python -c "from test_agent import t22_dpll_basic; t22_dpll_basic()"
+```
+
+---
+
+## 알고리즘 설명: DPLL로 함의 판정 (`logic.dpll_entails`, TODO 3)
+
+### 역할
+TODO 2-2의 만족 가능성 판정을 이용해 KB가 질의 α를 함의하는지 답한다.
+
+### 구현 코드
+```python
+def dpll_entails(kb_clauses, alpha, stats=None, use_pure=True, use_unit=True):
+    negated_clauses = to_cnf(~alpha)
+
+    clauses = kb_clauses | negated_clauses
+
+    satisfiable = dpll_satisfiable(
+        clauses, stats, use_pure, use_unit
+    )
+
+    return not satisfiable
+```
+
+### 핵심 아이디어: 질의를 거짓으로 만드는 반례를 찾는다
+KB와 부정된 질의를 동시에 만족시킬 수 있는지 묻고 그 답을 뒤집는다.
+
+### 줄별 설명
+| 코드 | 기능 |
+| --- | --- |
+| `to_cnf(~alpha)` | 질의 전체를 부정한 뒤 DPLL이 받는 절의 집합(CNF)으로 변환한다. |
+| `clauses = kb_clauses \| negated_clauses` | 두 절 집합을 합쳐 `KB ∧ ¬α`를 구성한다. 원래 KB는 그대로 보존한다. |
+| `return not satisfiable` | 만족 가능한 모델이 있으면 그것이 반례다. 반례가 없을 때만 함의가 `True`다. |
+
+### 동작 예
+KB가 `A ∨ B`와 `¬A`라면 B를 질의할 때 `¬B`를 추가한다. A와 B가 모두 거짓이면 첫 절을 만족시킬 수 없어 `KB ⊨ B`가 성립한다.
+
+### 설계상 주의점
+`~alpha`는 논리식의 부정을 만들고, 마지막 `not`은 DPLL이 반환한 파이썬 불리언을 뒤집는다.
+
+### 흔한 실수
+| 실수 | 결과 |
+| --- | --- |
+| `satisfiable`을 그대로 반환 | 반례가 있는 질의를 참이라고 답한다. |
+
+### 검증 결과
+**테스트의 기대 결과** 같은 교재 KB의 다섯 질의에 대해 DPLL의 답을 TODO 1의 진리표 결과와 비교한다.
+
+### 한계
+결과가 `False`이면 반례가 존재한다. 이것만으로 KB가 `¬α`를 함의한다고 결론낼 수는 없다.
+
+### 테스트
+
+```bash
+python -c "from test_agent import t3_dpll_entails; t3_dpll_entails()"
+```
+
+---
+
+## 알고리즘 설명: 지각을 지식 베이스에 기록 (`agent.tell_percept`, TODO 5)
+
+### 역할
+현재 칸에서 받은 바람과 냄새를 구덩이·웜퍼스에 관한 문장으로 바꿔 KB에 기록한다. TODO 6의 `update_knowledge`가 이 사실을 질의해 안전 칸을 갱신한다.
+
+### 구현 코드
+```python
+if p.breeze:
+    self.kb.tell(Or(*[P(n) for n in nb]))
+else:
+    for n in nb:
+        self.kb.tell(~P(n))
+
+if not self.wumpus_dead:
+    smell_cells = [c] + nb
+    if p.stench:
+        self.kb.tell(Or(*[W(n) for n in smell_cells]))
+    else:
+        for n in smell_cells:
+            self.kb.tell(~W(n))
+```
+
+### 핵심 아이디어: 감지하면 후보를 OR로 묶고, 감지하지 않으면 하나씩 제외한다
+양성 관측은 가능한 위치를 묶어 기록하고, 음성 관측은 각 후보에서 위험을 지운다.
+
+### 줄별 설명
+| 코드 | 기능 |
+| --- | --- |
+| `c in self.told`, `self.kb.tell(~P(c))` | 방문 기록과 사격 결과를 먼저 처리한다. 새로 관측한 칸에서는 현재 칸에 구덩이가 없음을 기록하고, 웜퍼스가 살아 있으면 `~W(c)`도 기록한다. |
+| `nb = self.neighbors(c)`, `p.breeze` | 바람이 있으면 이웃 중 적어도 한 곳에 구덩이가 있다는 절 하나를 넣는다. 없으면 이웃마다 `~P(n)`을 넣는다. |
+| `smell_cells = [c] + nb` | 웜퍼스가 살아 있을 때 냄새 후보는 현재 칸과 이웃이다. 냄새가 있으면 후보를 OR로 묶고, 없으면 후보마다 `~W(n)`을 넣는다. |
+| `self.dirty = True` | 새 관측을 기록한 뒤 TODO 6에서 안전 여부를 다시 계산하도록 표시한다. |
+
+### 동작 예
+시작 칸 `(1,1)`에서 바람이 있고 냄새가 없으면 `P12 ∨ P21`을 기록하고 두 이웃에 각각 `¬W12`, `¬W21`을 기록한다. 바람만으로는 두 이웃 중 어느 곳에 구덩이가 있는지 특정할 수 없다.
+
+### 설계상 주의점
+비명과 빗나간 화살 처리는 재방문 검사보다 앞에 있다. 이미 관측한 칸에서도 새 사격 결과를 반영할 수 있다.
+
+### 흔한 실수
+| 실수 | 결과 |
+| --- | --- |
+| 바람이 불 때 이웃마다 `P(n)`을 따로 기록 | 모든 이웃에 구덩이가 있다고 단정하게 된다. |
+
+### 검증 결과
+**테스트의 기대 결과** 그림 7.2 세계에서 에이전트가 금을 가지고 탈출하는지 확인하는 통합 테스트다. 지각 기록과 이후 추론·행동을 함께 검사한다.
+
+### 한계
+한 번의 양성 관측만으로 여러 후보 중 위험의 위치를 정할 수 없다. 다른 칸의 관측과 함께 추론해야 한다.
+
+### 테스트
+
+```bash
+python -c "from test_agent import t5_agent_fig72; t5_agent_fig72()"
+```
