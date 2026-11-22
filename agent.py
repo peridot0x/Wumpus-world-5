@@ -103,16 +103,24 @@ class HybridWumpusAgent:
         if not self.dirty:
             return
         self.dirty = False
-        # [TODO 6] 모든 칸 c에 대해 ASK 하여 지식 집합을 갱신하라.
-        #   · c ∉ not_pit, c ∉ known_pit 이면
-        #       ASK(KB, ¬P(c)) 가 참 → self.not_pit 에 추가
-        #       아니면 ASK(KB, P(c)) 가 참 → self.known_pit 에 추가
-        #   · 웜퍼스가 살아 있고 c ∉ not_wumpus 이고 아직 위치를 모르면
-        #       ASK(KB, ¬W(c)) 가 참 → self.not_wumpus 에 추가
-        #       아니면 ASK(KB, W(c)) 가 참 → self.known_wumpus = c,
-        #             웜퍼스는 하나뿐이므로 다른 모든 칸 o 에 대해 TELL ¬W(o), not_wumpus 에 추가
-        #   (self.safe 속성은 not_pit · not_wumpus 로부터 자동 계산됨)
-        raise NotImplementedError("TODO 6: update_knowledge")
+        for c in self.cells:
+            # 구덩이
+            if c not in self.not_pit and c not in self.known_pit:
+                if self.kb.ask(Not(P(c))):
+                    self.not_pit.add(c)
+                elif self.kb.ask(P(c)):
+                    self.known_pit.add(c)
+            # 웜퍼스 (살아 있고, 아직 위치를 모를 때)
+            if not self.wumpus_dead and self.known_wumpus is None and c not in self.not_wumpus:
+                if self.kb.ask(Not(W(c))):
+                    self.not_wumpus.add(c)
+                elif self.kb.ask(W(c)):
+                    self.known_wumpus = c
+                    for o in self.cells:                # 웜퍼스는 하나뿐임
+                        if o != c:
+                            self.kb.tell(Not(W(o)))
+                            self.not_wumpus.add(o)
+ #       raise NotImplementedError("TODO 6: update_knowledge")
 
     # ------------------------------------------------------------- 행동 결정
     def choose_plan(self, p):
