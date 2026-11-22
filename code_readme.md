@@ -97,3 +97,117 @@ return None
 ### 이 코드에서 확인할 점
 - `test_agent.py`의 TODO 4가 직선 경로, 최소 동작 수 3, 경로 없음(`None`)을 검사한다.
 - 막힌 경우에는 `plan_route((1,1), 0, {(4,4)}, 일부 칸을 뺀 allowed)`처럼 호출해 `None`이 반환되는지 확인할 수 있다.
+
+- ************************************************************
+- Agent.py update_knowledge (TODO 6)
+- ## 알고리즘 설명: 지식 갱신 (`agent.update_knowledge`, TODO 6)
+
+### 역할
+KB에 쌓인 논리식에 대해 **"이 칸에 구덩이가 있는가, 웜퍼스가 있는가"를 ASK로 묻고, 증명된 결과만 집합에 저장**한다.
+행동 결정(`choose_plan`)은 KB를 직접 읽지 않고 이 집합들만 사용한다.
+
+| 집합 | 의미 |
+|---|---|
+| `not_pit` | 구덩이가 없다고 **증명된** 칸 |
+| `known_pit` | 구덩이가 있다고 **증명된** 칸 |
+| `not_wumpus` | 웜퍼스가 없다고 증명된 칸 |
+| `known_wumpus` | 웜퍼스 위치 (모르면 `None`) |
+
+`safe` 속성은 `not_pit`과 `not_wumpus`(웜퍼스가 죽었다면 `not_pit`만)에서 자동으로 계산된다.
+
+### 구현 코드
+```python
+def update_knowledge(self):
+    if not self.dirty:
+        return
+    self.dirty = False
+    for c in self.cells:
+        # ---- 구덩이
+        if c not in self.not_pit and c not in self.known_pit:
+            if self.kb.ask(Not(P(c))):
+                self.not_pit.add(c)
+            elif self.kb.ask(P(c)):
+                self.known_pit.add(c)
+        # ---- 웜퍼스 (살아 있고, 아직 위치를 모를 때만)
+        if not self.wumpus_dead and self.known_wumpus is None and c not in self.not_wumpus:
+            if self.kb.ask(Not(W(c))):
+                self.not_wumpus.add(c)
+            elif self.kb.ask(W(c)):
+                self.known_wumpus = c
+                for o in self.cells:            # 웜퍼스는 하나뿐 → 나머지 칸은 모두 ¬W
+                    if o != c:
+                        self.kb.tell(Not(W(o)))
+                        self.not_wumpus.add(o)
+```
+
+### 핵심 아이디어: 세 가지 결과를 구분한다
+`ask`가 거짓이라는 것은 "있다"는 뜻이 아니라 **"없다고 증명할 수 없다"** 는 뜻이다. 그래서 질문을 두 번 한다.
+
+| `ask(¬P)` | `ask(P)` | 의미 | 처리 |
+|---|---|---|---|
+| 참 | (묻지 않음) | 구덩이 없음이 증명됨 | `not_pit`에 추가 |
+| 거짓 | 참 | 구덩이 있음이 증명됨 | `known_pit`에 추가 |
+| 거짓 | 거짓 | **아직 모름** | 아무것도 하지 않음 |
+
+웜퍼스도 같은 3분기 구조이다. "모르는 칸"을 안전으로도, 위험으로도 확정하지 않는 것이 에이전트의 **건전성**(안전 정책 사망 0%)을 지킨다.
+
+### 줄별 설명
+| 코드 | 기능 |
+|---|---|
+| `if not self.dirty: return` | KB가 바뀌지 않았으면 다시 계산하지 않는다 (ASK 횟수 절약) |
+| `self.dirty = False` | 이번 갱신으로 최신 상태가 반영됨을 표시 |
+| `for c in self.cells` | 모든 칸을 차례로 검사 |
+| `c not in not_pit and c not in known_pit` | 이미 결론이 난 칸은 건너뜀. 증명된 사실은 KB가 커져도 뒤집히지 않으므로(단조성) 다시 물을 필요가 없다 |
+| `ask(Not(P(c)))` 참 → `not_pit` | 구덩이 없음이 증명됨 |
+| `elif ask(P(c))` 참 → `known_pit` | 구덩이 있음이 증명됨 (앞 질문이 거짓일 때만 호출) |
+| `not wumpus_dead and known_wumpus is None and c not in not_wumpus` | 웜퍼스가 살아 있고, 위치를 모르며, 이 칸이 아직 미확정일 때만 질문 |
+| `ask(Not(W(c)))` 참 → `not_wumpus` | 이 칸에 웜퍼스 없음 증명 |
+| `elif ask(W(c)))` 참 → `known_wumpus = c` | 웜퍼스 위치 확정 |
+| `for o ... tell(Not(W(o)))`, `not_wumpus.add(o)` | "웜퍼스는 하나뿐"이라는 세계 규칙 적용. 확정된 칸 `c`를 제외한 모든 칸을 `¬W`로 TELL하고 `not_wumpus`에 추가 |
+
+"웜퍼스는 하나뿐"을 KB 절로 넣지 않고 위치 확정 시점에 코드로 처리하는 이유는, 모든 `W` 기호를 묶는 절이 들어가면 `relevant_clauses`가 거의 전체 KB를 끌어와 ASK가 느려지기 때문이다.
+
+### 동작 예: 교재 그림 7.4 상황
+(2,2)에서 냄새가 없고 (1,2)에서만 냄새가 나는 경우이다.
+1. (2,2)에 냄새가 없으므로 (1,2), (2,1), (3,2), (2,3), (2,2)에는 웜퍼스가 없다.
+2. (1,2)의 냄새 규칙은 `W12 ∨ W11 ∨ W22 ∨ W13`이다. 앞의 세 칸이 모두 거짓이므로 `W13`만 남는다.
+3. `ask(¬W13)`은 거짓, `ask(W13)`은 참이므로 `known_wumpus = (1,3)`이 된다.
+4. 나머지 15칸이 모두 `not_wumpus`가 되고, 그중 `not_pit`인 칸이 안전 칸이 된다.
+
+### 설계상 주의점
+- **반복 중 `known_wumpus`가 바뀌어도 안전하다.** 이후 칸은 `known_wumpus is None`이 거짓이라 건너뛰고, 이미 지나간 칸은 ASK 결과로 `not_wumpus`에 들어 있거나 확정 시점에 한꺼번에 채워진다.
+- **확정된 칸 자신은 `not_wumpus`에 넣지 않는다.** (`o != c`) 그래서 그 칸은 `safe`에서 빠져 에이전트가 들어가지 않는다.
+- **`dirty`와의 관계**: 함수 안의 `tell(¬W)`는 `dirty`를 다시 켜지 않는다. 이미 결론이 반영된 TELL이어서 다시 계산할 필요가 없다.
+- **효율**: 칸마다 ASK는 최대 4번(구덩이 2, 웜퍼스 2)이지만 확정된 칸은 건너뛰고, `relevant_clauses`가 관련 절만 추려서 ASK 1회가 약 0.01 ms이다.
+
+### 흔한 실수
+| 실수 | 결과 |
+|---|---|
+| `ask(¬P)`가 거짓일 때 `else`로 `known_pit`에 넣음 | 모르는 칸을 위험으로 오판해 탐험 기회를 놓침 |
+| `ask(P)`가 거짓이면 안전으로 처리 | 증명되지 않은 칸에 들어가 사망 |
+| 위치 확정 후 `not_wumpus`에 `c`까지 포함 | 웜퍼스 칸을 안전으로 판단해 사망 |
+| 이미 확정된 칸도 매번 ASK | 결과는 같지만 실행이 느려짐 |
+
+### 검증 결과
+세계 3600개(DPLL 3000개, TT 600개, seed 1000 이상)에서 에이전트가 확정한 집합을 실제 세계와 대조했다.
+
+| 검사 | 틀린 건수 |
+|---|---|
+| `not_pit`인데 실제 구덩이 | 0 |
+| `known_pit`인데 실제 구덩이 아님 | 0 |
+| `not_wumpus`인데 실제 웜퍼스 칸 | 0 |
+| `known_wumpus`가 실제 위치와 다름 | 0 (확정한 1085개 에피소드 모두 정확) |
+| 안전 정책 사망 | 0 |
+
+관련 절 추출(가지치기)을 켜고 끈 두 경우의 지식 집합은 400개 세계에서 모두 같았다.
+
+### 한계
+KB에 "웜퍼스가 최소 한 마리 있다"는 절이 없어서, 3000개 중 11개 에피소드에서는 나머지 15칸이 모두 `¬W`인데도 남은 칸을 웜퍼스로 확정하지 못했다.
+그 칸은 `not_wumpus`에 없으므로 `safe`에서 빠져 **안전에는 영향이 없고**, 사격할 때 위치가 확정된 경우의 분기를 타지 못하는 효율상의 손실만 있다.
+반복문 뒤에 "`not_wumpus`에 없는 칸이 하나뿐이면 그 칸을 `known_wumpus`로 정한다"를 추가하면 보완할 수 있다(개선 방향).
+
+### 테스트
+```
+python test_agent.py     # TODO 5~7 에이전트 (그림 7.2), (무작위 200개, 건전성)  → PASS
+```
+건전성 테스트는 KB의 모든 절이 실제 세계에서 참인지, 안전 정책에서 사망하지 않는지를 검사한다.
