@@ -98,9 +98,11 @@ return None
 - `test_agent.py`의 TODO 4가 직선 경로, 최소 동작 수 3, 경로 없음(`None`)을 검사한다.
 - 막힌 경우에는 `plan_route((1,1), 0, {(4,4)}, 일부 칸을 뺀 allowed)`처럼 호출해 `None`이 반환되는지 확인할 수 있다.
 
-- ************************************************************
-- Agent.py update_knowledge (TODO 6)
-- ## 알고리즘 설명: 지식 갱신 (`agent.update_knowledge`, TODO 6)
+************************************************************
+
+  
+##Agent.py update_knowledge (TODO 6)
+## 알고리즘 설명: 지식 갱신 (`agent.update_knowledge`, TODO 6)
 
 ### 역할
 KB에 쌓인 논리식에 대해 **"이 칸에 구덩이가 있는가, 웜퍼스가 있는가"를 ASK로 묻고, 증명된 결과만 집합에 저장**한다.
