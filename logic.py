@@ -289,6 +289,13 @@ def find_unit_clause(clauses, model):
     예) clauses = [{'A','B'}], model = {'A': False}  →  ('B', True)
         clauses = [{'~C'}],    model = {}            →  ('C', False)
     힌트: clause_status를 그대로 이용하면 5줄 정도면 된다."""
+    for c in clauses:
+        status, undecided = clause_status(c, model)
+
+        if status == "undecided" and len(undecided) == 1:
+            lit = undecided[0]
+            return var(lit), lit[0] != "~"
+          
     return None, None          # ← 구현하지 않으면 휴리스틱 없이 동작
 
 
