@@ -130,6 +130,23 @@ class HybridWumpusAgent:
             return ["Grab"] + home + ["Climb"]
         # [TODO 7-②] 방문하지 않은 안전 칸(self.safe − self.visited)이 있으면
         #            plan_route(self.pos, self.dir, 그 칸들, allowed) 결과를 반환
+        frontier = self.safe - self.visited
+        if frontier:                                         # ② 안전한 미방문 칸 탐험
+            plan = plan_route(self.pos, self.dir, frontier, allowed)
+            if plan:
+                return plan
+        if self.use_shoot and self.has_arrow and not self.wumpus_dead:   # ③ 사격
+            blocked = [c for c in self.cells if c in self.not_pit and c not in self.visited
+                       and c not in self.not_wumpus]         # 구덩이는 없지만 웜퍼스가 있을 수 있는 칸
+            if self.known_wumpus in blocked:
+                blocked = [self.known_wumpus]                # 위치를 알면 그 칸만 겨냥
+            best = None
+            for t in blocked:
+                plan = plan_shot(self.pos, self.dir, t, allowed, self.size)
+                if plan is not None and (best is None or len(plan) < len(best)):
+                    best = plan
+            if best:
+                return best
         # [TODO 7-③] (선택) 화살이 있고 웜퍼스가 살아 있을 때, 구덩이는 없다고 증명되었지만
         #            웜퍼스 때문에 들어가지 못하는 칸이 있으면 plan_shot(...) 으로 사격 계획 반환
         #            사격 후 Scream 여부는 tell_percept 앞부분에서 이미 처리됨
