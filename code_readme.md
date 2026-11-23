@@ -557,3 +557,129 @@ self.dirty = True
 ```bash
 python -c "from test_agent import t5_agent_fig72; t5_agent_fig72()"
 ```
+
+---
+
+## 알고리즘 설명: 순수 기호 찾기 (`logic.find_pure_symbol`, TODO 2-3)
+
+### 역할
+아직 참이 되지 않은 절에서 한쪽 부호로만 등장하는 미할당 기호를 찾는다. DPLL은 반환된 값을 배정해 그 기호의 참·거짓 분기를 줄인다.
+
+### 구현 코드
+```python
+for p in symbols:
+    if p in model:
+        continue
+
+    positive = False
+    negative = False
+
+    for c in clauses:
+        status, _ = clause_status(c, model)
+
+        if status == "true":
+            continue
+
+        if p in c:
+            positive = True
+
+        if "~" + p in c:
+            negative = True
+
+    if positive and not negative:
+        return p, True
+
+    if negative and not positive:
+        return p, False
+
+return None, None
+```
+
+### 핵심 아이디어: 남은 절에서 한쪽 부호로만 등장하는 기호를 고른다
+기호가 `B`로만 등장하면 `True`, `~B`로만 등장하면 `False`를 배정한다. 해당 리터럴이 참이 되어 그 기호가 들어 있는 남은 절을 만족시킨다.
+
+### 줄별 설명
+| 코드 | 기능 |
+| --- | --- |
+| `if p in model: continue` | 값이 이미 배정된 기호를 건너뛴다. |
+| `clause_status(c, model)` | 절의 상태를 확인하고, 이미 참인 절은 건너뛴다. |
+| `p in c`, `"~" + p in c` | 같은 기호의 양의 리터럴과 음의 리터럴이 각각 등장했는지 기록한다. |
+| `return p, True`, `return p, False` | 모든 절을 살펴본 뒤 정확히 한쪽 부호에만 표시가 있으면 그 리터럴을 참으로 만드는 값을 반환한다. |
+| `return None, None` | 모든 기호를 검사하고도 순수 기호를 찾지 못하면 이 값을 반환한다. |
+
+### 동작 예
+빈 모델에서 `(A ∨ ~B) ∧ (~A ∨ ~B)`를 검사한다. `A`는 두 부호로 등장하고 `B`는 `~B`로만 등장하므로 `("B", False)`를 반환한다.
+
+### 설계상 주의점
+`positive`와 `negative`는 기호마다 `False`로 초기화한다. 순수 기호를 찾으면 하나를 반환하고, DPLL이 새 모델로 다시 상태를 검사한다.
+
+### 흔한 실수
+| 실수 | 결과 |
+| --- | --- |
+| `for c in clauses` 안에서 순수 여부를 판정 | 뒤에 있는 절의 반대 부호를 확인하기 전에 값을 반환할 수 있다. |
+
+### 검증 결과
+**테스트의 기대 결과** 순수 기호가 있으면 그 리터럴을 참으로 만드는 값을, 후보가 없으면 `(None, None)`을 반환한다.
+
+### 한계
+미할당 기호가 모두 두 부호로 등장하면 이 함수로 배정할 값을 정할 수 없다.
+
+### 테스트
+
+```bash
+python -c "from test_agent import t23_pure; t23_pure()"
+```
+
+---
+
+## 알고리즘 설명: 단위 절 찾기 (`logic.find_unit_clause`, TODO 2-4)
+
+### 역할
+현재 모델에서 미할당 리터럴 하나만 남은 미확정 절을 찾는다. DPLL이 그 절을 만족시키는 데 필요한 값을 바로 배정할 수 있게 한다.
+
+### 구현 코드
+```python
+for c in clauses:
+    status, undecided = clause_status(c, model)
+
+    if status == "undecided" and len(undecided) == 1:
+        lit = undecided[0]
+        return var(lit), lit[0] != "~"
+
+return None, None
+```
+
+### 핵심 아이디어: 마지막으로 남은 리터럴은 반드시 참이어야 한다
+이미 배정된 리터럴이 전부 거짓이고 하나만 미할당이면, 남은 리터럴을 참으로 만들어야 OR 절이 참이 된다.
+
+### 줄별 설명
+| 코드 | 기능 |
+| --- | --- |
+| `status, undecided = clause_status(c, model)` | 현재 모델에서 절의 상태와 미할당 리터럴 목록을 얻는다. |
+| `status == "undecided" and len(undecided) == 1` | 미확정 상태이고 미할당 리터럴이 정확히 하나인 절을 고른다. |
+| `lit = undecided[0]` | 목록에서 유일하게 남은 리터럴을 꺼낸다. |
+| `return var(lit), lit[0] != "~"` | 부정 부호를 뗀 기호를 반환한다. 첫 글자가 `~`면 배정값은 `False`, 그 외에는 `True`다. |
+| `return None, None` | 모든 절을 검사하고도 단위 절을 찾지 못하면 이 값을 반환한다. |
+
+### 동작 예
+절 `A ∨ ~B`에서 `A=False`라면 `~B`만 미할당이다. 절을 참으로 만들려면 `B=False`여야 하므로 `("B", False)`를 반환한다.
+
+### 설계상 주의점
+단위 여부는 현재 배정에 따라 달라진다. 처음에 리터럴이 여러 개였던 절도 배정이 진행되면 단위 절이 될 수 있다.
+
+### 흔한 실수
+| 실수 | 결과 |
+| --- | --- |
+| 마지막 `return None, None`을 절 반복문 안에 작성 | 처음 검사한 절이 단위 절이 아니면 이후 절을 확인하기 전에 종료한다. |
+
+### 검증 결과
+**테스트의 기대 결과** 미할당 리터럴이 하나인 미확정 절에서 리터럴을 참으로 만드는 배정값을 반환한다.
+
+### 한계
+미확정 절마다 미할당 리터럴이 둘 이상이면 이 함수로 배정할 값을 정할 수 없다.
+
+### 테스트
+
+```bash
+python -c "from test_agent import t24_unit; t24_unit()"
+```
