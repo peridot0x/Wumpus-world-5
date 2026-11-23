@@ -123,7 +123,7 @@ class HybridWumpusAgent:
  #       raise NotImplementedError("TODO 6: update_knowledge")
 
     # ------------------------------------------------------------- 행동 결정
-    def choose_plan(self, p):
+        def choose_plan(self, p):
         allowed = self.safe | self.visited
         if p.glitter and not self.has_gold:
             home = plan_route(self.pos, self.dir, {(1, 1)}, allowed) or []
@@ -135,7 +135,7 @@ class HybridWumpusAgent:
             plan = plan_route(self.pos, self.dir, frontier, allowed)
             if plan:
                 return plan
-        if self.use_shoot and self.has_arrow and not self.wumpus_dead:   # ③ 사격
+        if self.has_arrow and not self.wumpus_dead:          # ③ 사격
             blocked = [c for c in self.cells if c in self.not_pit and c not in self.visited
                        and c not in self.not_wumpus]         # 구덩이는 없지만 웜퍼스가 있을 수 있는 칸
             if self.known_wumpus in blocked:
