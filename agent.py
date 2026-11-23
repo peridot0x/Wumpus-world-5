@@ -120,10 +120,9 @@ class HybridWumpusAgent:
                         if o != c:
                             self.kb.tell(Not(W(o)))
                             self.not_wumpus.add(o)
- #       raise NotImplementedError("TODO 6: update_knowledge")
 
     # ------------------------------------------------------------- 행동 결정
-        def choose_plan(self, p):
+    def choose_plan(self, p):
         allowed = self.safe | self.visited
         if p.glitter and not self.has_gold:
             home = plan_route(self.pos, self.dir, {(1, 1)}, allowed) or []
@@ -135,6 +134,9 @@ class HybridWumpusAgent:
             plan = plan_route(self.pos, self.dir, frontier, allowed)
             if plan:
                 return plan
+        # [TODO 7-③] (선택) 화살이 있고 웜퍼스가 살아 있을 때, 구덩이는 없다고 증명되었지만
+        #            웜퍼스 때문에 들어가지 못하는 칸이 있으면 plan_shot(...) 으로 사격 계획 반환
+        #            사격 후 Scream 여부는 tell_percept 앞부분에서 이미 처리됨
         if self.has_arrow and not self.wumpus_dead:          # ③ 사격
             blocked = [c for c in self.cells if c in self.not_pit and c not in self.visited
                        and c not in self.not_wumpus]         # 구덩이는 없지만 웜퍼스가 있을 수 있는 칸
@@ -147,9 +149,6 @@ class HybridWumpusAgent:
                     best = plan
             if best:
                 return best
-        # [TODO 7-③] (선택) 화살이 있고 웜퍼스가 살아 있을 때, 구덩이는 없다고 증명되었지만
-        #            웜퍼스 때문에 들어가지 못하는 칸이 있으면 plan_shot(...) 으로 사격 계획 반환
-        #            사격 후 Scream 여부는 tell_percept 앞부분에서 이미 처리됨
 
         # ④ 모험: 증명상 위험하지 않은 칸 (구덩이·웜퍼스가 확정되지 않은 칸)
         if self.policy == "risk":
