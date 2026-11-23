@@ -223,12 +223,38 @@ python test_agent.py     # TODO 5~7 에이전트 (그림 7.2), (무작위 200개
 
 ### 구현 코드
 ```python
-p = symbols[index]
+kb_symbols = set()
 
-return (
-    check_all(index + 1, {**model, p: True})
-    and check_all(index + 1, {**model, p: False})
-)
+for clause in kb_clauses:
+    for lit in clause:
+        kb_symbols.add(var(lit))
+
+symbols = sorted(kb_symbols | alpha.symbols())
+
+if stats is not None:
+    stats["symbols_max"] = max(
+        stats.get("symbols_max", 0),
+        len(symbols)
+    )
+
+def check_all(index, model):
+    if index == len(symbols):
+        if stats is not None:
+            stats["models"] = stats.get("models", 0) + 1
+
+        if all(_clause_true(c, model) for c in kb_clauses):
+            return alpha.pl_true(model)
+
+        return True
+
+    p = symbols[index]
+
+    return (
+        check_all(index + 1, {**model, p: True})
+        and check_all(index + 1, {**model, p: False})
+    )
+
+return check_all(0, {})
 ```
 
 ### 핵심 아이디어: 반례 한 개면 충분하다
@@ -237,15 +263,19 @@ return (
 ### 줄별 설명
 | 코드 | 기능 |
 | --- | --- |
-| `var(lit)`, `alpha.symbols()` | KB의 리터럴에서 부호를 떼고 질의의 기호까지 합친다. `check_all(0, {})`에서 빈 모델로 시작한다. |
-| `index == len(symbols)` | 완전한 모델에서 모든 절이 참이면 `alpha.pl_true(model)`을 반환한다. KB가 거짓인 행은 반례가 될 수 없어 `True`로 넘긴다. |
-| `check_all(...) and check_all(...)` | 기호를 참과 거짓으로 각각 배정한다. 한쪽에서 반례가 나오면 남은 쪽을 검사할 필요가 없다. |
+| `kb_symbols = set()`, `var(lit)` | KB의 모든 절을 돌며 리터럴에서 부정 기호를 뗀 기호 이름을 집합에 모은다. 중복 기호는 한 번만 남는다. |
+| `sorted(kb_symbols \| alpha.symbols())` | KB와 질의 α에 나오는 기호를 합치고, 정렬한 순서대로 배정한다. |
+| `stats["symbols_max"] = max(...)` | 통계 딕셔너리가 주어지면 기호 개수를 이전 최댓값과 비교해 기록한다. |
+| `return check_all(0, {})` | 첫 기호부터 배정할 수 있도록 인덱스 0과 빈 모델로 재귀를 시작한다. |
+| `index == len(symbols)` | 모든 기호를 배정하면 검사한 완전 모델 수를 1 늘린다. 통계 딕셔너리가 있을 때만 센다. |
+| `all(_clause_true(c, model) for c in kb_clauses)` | 모든 절이 참인 모델에서는 `alpha.pl_true(model)`으로 질의를 평가한다. KB가 거짓인 모델에서는 반례가 없으므로 `True`를 반환한다. |
+| `symbols[index]`, `check_all(...) and check_all(...)` | 현재 기호의 참·거짓 배정을 각각 새 모델에 넣고 다음 인덱스로 넘어간다. 참 쪽에서 반례가 나오면 `and`의 단락 평가로 거짓 쪽을 생략한다. |
 
 ### 동작 예
 KB가 `A ∨ B`이고 질의가 `A`일 때, `A=False, B=True`인 행에서 KB는 참이고 질의는 거짓이다. 따라서 결과는 `False`다.
 
 ### 설계상 주의점
-`stats["models"]`는 실제 도달한 완전 모델 수이고, `symbols_max`는 한 질의에서 다룬 기호 수의 최댓값이다.
+`stats["models"]`는 실제로 검사한 완전 모델의 개수를 누적한다. 같은 통계 딕셔너리를 여러 질의에서 사용하면 `symbols_max`에는 그중 가장 큰 기호 개수가 남는다.
 
 ### 흔한 실수
 | 실수 | 결과 |
@@ -332,6 +362,28 @@ python -c "from test_agent import t21_clause_status; t21_clause_status()"
 모든 절을 동시에 참으로 만드는 기호 배정이 하나라도 있는지 탐색한다.
 
 ### 구현 코드
+**조기 종료**
+
+```python
+all_true = True
+
+for c in clauses:
+    status, _ = clause_status(c, model)
+
+    if status == "false":
+        return False
+
+    if status != "true":
+        all_true = False
+
+if all_true:
+    return True
+```
+
+**미할당 기호 분기**
+
+절 검사로 결론이 나지 않으면 `use_pure`, `use_unit` 옵션에 따라 순수 기호와 단위 절을 차례로 확인한다. 두 방법으로 새 값을 정하지 못하면 아래 코드로 분기한다.
+
 ```python
 p = next((s for s in symbols if s not in model), None)
 
@@ -352,9 +404,13 @@ return (
 ### 줄별 설명
 | 코드 | 기능 |
 | --- | --- |
-| `status, _ = clause_status(c, model)` | 거짓인 절이 하나면 현재 분기는 `False`다. 모든 절이 이미 참이면 남은 기호를 배정할 필요 없이 `True`다. |
-| `use_pure`, `use_unit` | 결론이 남으면 활성화된 순수 기호·단위 절 함수 순서로 배정할 값을 찾는다. |
-| `next(...)`, `dpll(...) or dpll(...)` | 아직 배정하지 않은 첫 기호를 골라 참과 거짓을 시도한다. 둘 중 한쪽만 성공해도 전체가 만족 가능하다. |
+| `all_true = True` | 모든 절이 참이라고 가정하고 절을 하나씩 검사한다. |
+| `status, _ = clause_status(c, model)` | 현재 배정으로 각 절의 상태를 구한다. 이 단계에서는 상태만 사용한다. |
+| `if status == "false": return False` | 거짓으로 확정된 절이 하나라도 있으면 현재 배정을 이어서 모든 절을 참으로 만들 수 없으므로 분기를 즉시 끝낸다. |
+| `if status != "true": all_true = False` | 거짓인 절은 앞에서 반환했으므로, 여기서는 미확정 절이 있을 때 표시를 내린다. |
+| `if all_true: return True` | 끝까지 모든 절이 참이면 기호 일부가 미할당이어도 만족 가능하다고 판정한다. |
+| `next(...)`, `if p is None` | 아직 값이 없는 첫 기호를 고른다. 미할당 기호를 찾지 못한 채 이 지점에 도달하면 `False`를 반환한다. |
+| `dpll(...) or dpll(...)` | 기호를 참과 거짓으로 배정한 분기 중 하나만 성공해도 충분하다. 참 쪽이 성공하면 거짓 쪽은 건너뛴다. |
 
 ### 동작 예
 `(A ∨ B) ∧ ¬A`에서 최적화를 끄고 A부터 고르면, `A=True`인 분기는 `¬A`에서 실패한다. `A=False, B=True`인 분기는 두 절이 모두 참이어서 성공한다.
@@ -442,6 +498,13 @@ python -c "from test_agent import t3_dpll_entails; t3_dpll_entails()"
 
 ### 구현 코드
 ```python
+nb = self.neighbors(c)
+
+self.kb.tell(~P(c))
+
+if not self.wumpus_dead:
+    self.kb.tell(~W(c))
+
 if p.breeze:
     self.kb.tell(Or(*[P(n) for n in nb]))
 else:
@@ -455,6 +518,8 @@ if not self.wumpus_dead:
     else:
         for n in smell_cells:
             self.kb.tell(~W(n))
+
+self.dirty = True
 ```
 
 ### 핵심 아이디어: 감지하면 후보를 OR로 묶고, 감지하지 않으면 하나씩 제외한다
@@ -463,16 +528,18 @@ if not self.wumpus_dead:
 ### 줄별 설명
 | 코드 | 기능 |
 | --- | --- |
-| `c in self.told`, `self.kb.tell(~P(c))` | 방문 기록과 사격 결과를 먼저 처리한다. 새로 관측한 칸에서는 현재 칸에 구덩이가 없음을 기록하고, 웜퍼스가 살아 있으면 `~W(c)`도 기록한다. |
-| `nb = self.neighbors(c)`, `p.breeze` | 바람이 있으면 이웃 중 적어도 한 곳에 구덩이가 있다는 절 하나를 넣는다. 없으면 이웃마다 `~P(n)`을 넣는다. |
-| `smell_cells = [c] + nb` | 웜퍼스가 살아 있을 때 냄새 후보는 현재 칸과 이웃이다. 냄새가 있으면 후보를 OR로 묶고, 없으면 후보마다 `~W(n)`을 넣는다. |
-| `self.dirty = True` | 새 관측을 기록한 뒤 TODO 6에서 안전 여부를 다시 계산하도록 표시한다. |
+| `nb = self.neighbors(c)` | 현재 칸 `c`와 상하좌우로 맞닿은 지도 안의 칸을 구한다. |
+| `self.kb.tell(~P(c))` | 에이전트가 살아서 관측 중인 현재 칸에는 구덩이가 없다고 기록한다. |
+| `if not self.wumpus_dead: self.kb.tell(~W(c))` | 웜퍼스가 살아 있는 동안에는 에이전트가 살아 있는 현재 칸에 웜퍼스가 없다는 사실도 기록한다. |
+| `if p.breeze` | 바람이 있으면 이웃 중 적어도 한 곳에 구덩이가 있다는 OR 절 하나를 추가한다. 바람이 없으면 이웃마다 `~P(n)`을 기록한다. |
+| `smell_cells = [c] + nb`, `if p.stench` | 웜퍼스가 살아 있을 때 현재 칸과 이웃을 냄새 후보로 본다. 냄새가 있으면 후보를 OR 절로 묶고, 없으면 각 후보에 `~W(n)`을 기록한다. |
+| `self.dirty = True` | KB에 새 관측을 기록했다는 표시를 남긴다. TODO 6의 `update_knowledge`가 갱신할 때 이 표시를 사용한다. |
 
 ### 동작 예
 시작 칸 `(1,1)`에서 바람이 있고 냄새가 없으면 `P12 ∨ P21`을 기록하고 두 이웃에 각각 `¬W12`, `¬W21`을 기록한다. 바람만으로는 두 이웃 중 어느 곳에 구덩이가 있는지 특정할 수 없다.
 
 ### 설계상 주의점
-비명과 빗나간 화살 처리는 재방문 검사보다 앞에 있다. 이미 관측한 칸에서도 새 사격 결과를 반영할 수 있다.
+웜퍼스가 죽은 뒤에는 현재 칸의 `~W(c)`와 냄새 관련 절을 추가하는 두 블록을 건너뛴다. 구덩이 관련 관측은 계속 기록한다.
 
 ### 흔한 실수
 | 실수 | 결과 |
