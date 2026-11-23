@@ -254,6 +254,31 @@ def find_pure_symbol(symbols, clauses, model):
       양(P)으로만 나오면 값 True, 음(~P)으로만 나오면 값 False.  없으면 (None, None)
     예) clauses = [{'A','~B'}, {'~B','C'}, {'~C','A'}], model = {}  →  ('A', True)  (B도 가능: ('B', False))
     힌트: 기호별로 나온 부호의 집합 {True, False}을 dict로 모은다. (약 10줄)"""
+    for p in symbols:
+        if p in model:
+            continue
+
+        positive = False
+        negative = False
+
+        for c in clauses:
+            status, _ = clause_status(c, model)
+
+            if status == "true":
+                continue
+
+            if p in c:
+                positive = True
+
+            if "~" + p in c:
+                negative = True
+
+        if positive and not negative:
+            return p, True
+
+        if negative and not positive:
+            return p, False
+  
     return None, None          # ← 구현하지 않으면 휴리스틱 없이 동작
 
 
